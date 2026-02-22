@@ -1,0 +1,4 @@
+.env_secrets
+pending/
+ports-baseline.txt
+*.log
