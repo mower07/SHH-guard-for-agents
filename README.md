@@ -1,80 +1,82 @@
-# SSH Guard — мониторинг и защита серверов через Telegram
+🇺🇸 English | [🇷🇺 Русский](README.ru.md)
 
-Набор bash-скриптов для VPS/выделенных серверов под управлением Ubuntu/Debian.
-Уведомляет в Telegram о каждом SSH-входе, умно батчит сообщения, блокирует неизвестные IP автоматически.
+# SSH Guard — Server Monitoring & Protection via Telegram
 
----
-
-## Кому поможет
-
-- Разработчикам и системным администраторам с VPS
-- Командам где несколько серверов, агентов, рабочих мест или сотрудников
-- Тем, кто хочет знать о подозрительных входах в реальном времени — без логов и мониторинга вручную
+A set of bash scripts for VPS and dedicated servers running Ubuntu/Debian.
+Notifies you in Telegram on every SSH login, batches messages intelligently, and auto-blocks unknown IPs.
 
 ---
 
-## Что внутри
+## Who It's For
 
-### Умные уведомления о SSH-входах
-- **Известный IP** → входы копятся в очередь, раз в минуту одно сообщение:
+- Developers and sysadmins running one or more VPS
+- Teams with multiple servers, agents, workstations, or employees
+- Anyone who wants real-time alerts on suspicious logins — without manual log checks
+
+---
+
+## What's Inside
+
+### Smart SSH Login Alerts
+- **Known IP** → logins are queued, one batched message per minute:
   ```
-  🔐 3 SSH-входов на MyServer | myserver (1.2.3.4)
+  🔐 3 SSH logins on MyServer | myserver (1.2.3.4)
   10:00:01 — 10:00:48
     • Admin (1.2.3.4) — root — 10:00:01
     • RemoteAgent (5.6.7.8) — root — 10:00:32
   ```
-- **Неизвестный IP, первый раз** → мгновенный алерт + вопрос ДА/НЕТ + 5 мин таймаут
-- **Неизвестный IP, повторный вход** → **немедленный автобан** без ожидания
-- **Нет ответа 5 минут** → IP автоматически блокируется через UFW
+- **Unknown IP, first login** → instant alert + YES/NO prompt + 5-minute timeout
+- **Unknown IP, repeat login** → **immediate auto-ban** without waiting
+- **No response in 5 minutes** → IP is automatically blocked via UFW
 
-### Мониторинг сервисов
-Каждые 5 минут проверяет что сервисы живые. Если упал — пишет в Telegram.
+### Service Monitoring
+Checks that services are alive every 5 minutes. If one goes down — sends a Telegram alert.
 
-### Мониторинг диска и памяти
-Алерт при заполнении диска >80% или памяти >90%.
+### Disk & Memory Monitoring
+Alerts when disk usage exceeds 80% or memory exceeds 90%.
 
-### Проверка аномальных портов
-Раз в сутки сравнивает открытые порты с эталоном. Если появился новый порт — алерт.
+### Anomalous Port Detection
+Compares open ports against a baseline once a day. If a new port appears — sends an alert.
 
-### Масштабируемость
-Единый белый список IP для всех серверов. Добавить новый сервер — одна команда.
-
----
-
-## Требования
-
-- Ubuntu/Debian с UFW
-- Telegram-бот (создать через @BotFather, получить токен)
-- SSH-доступ к серверу с ключом (без пароля)
-- Один из серверов — **мастер** (хранит общий whitelist и синхронизирует остальные)
+### Multi-Server Support
+Single shared IP whitelist for all servers. Adding a new server takes one command.
 
 ---
 
-## Быстрый старт
+## Requirements
 
-### 1. Создать Telegram-бота
-- Написать @BotFather → `/newbot`
-- Сохранить токен
-- Узнать свой Telegram ID: написать @userinfobot
+- Ubuntu/Debian with UFW
+- Telegram bot (create via @BotFather, save the token)
+- SSH access to the server with a key (passwordless)
+- One server designated as **master** (stores shared whitelist and syncs to others)
 
-### 2. Заполнить `.env_secrets`
+---
+
+## Quick Start
+
+### 1. Create a Telegram Bot
+- Message @BotFather → `/newbot`
+- Save the bot token
+- Get your Telegram chat ID: message @userinfobot
+
+### 2. Fill in `.env_secrets`
 ```bash
 cp scripts/.env_secrets.template /root/.env_secrets
 nano /root/.env_secrets
 chmod 600 /root/.env_secrets
 ```
 
-### 3. Развернуть на мастер-сервере
+### 3. Deploy on the Master Server
 ```bash
 mkdir -p /root/scripts/security/pending
 cp scripts/*.sh /root/scripts/security/
 cp scripts/*.conf /root/scripts/security/
 chmod 700 /root/scripts/security/*.sh
 
-# SSH-алерт через PAM
+# SSH alert via PAM
 echo 'session optional pam_exec.so /root/scripts/security/ssh-alert.sh' >> /etc/pam.d/sshd
 
-# Cron
+# Cron jobs
 (crontab -l 2>/dev/null; \
   echo "*/5 * * * * /root/scripts/security/monitor.sh"; \
   echo "0 8 * * * /root/scripts/security/port-check.sh"; \
@@ -83,162 +85,162 @@ echo 'session optional pam_exec.so /root/scripts/security/ssh-alert.sh' >> /etc/
   echo "0 3 * * * /root/scripts/security/sync-whitelist.sh") | crontab -
 ```
 
-### 4. Добавить свой IP в белый список
+### 4. Add Your IP to the Whitelist
 ```bash
 echo "1.2.3.4 Admin" >> /root/scripts/security/whitelist-ips.conf
 ```
 
-### 5. Разрешить UFW без пароля (если запускаете от non-root)
+### 5. Allow UFW Without Password (if running as non-root)
 ```bash
 echo "myuser ALL=(ALL) NOPASSWD: /usr/sbin/ufw" >> /etc/sudoers.d/myuser-ufw
 chmod 440 /etc/sudoers.d/myuser-ufw
 ```
 
-### 6. Добавить следующий сервер
+### 6. Onboard a New Server
 ```bash
-./onboard-server.sh root@IP "Метка"
+./onboard-server.sh root@IP "Label"
 ```
 
 ---
 
-## Логика блокировки неизвестных IP
+## Unknown IP Blocking Logic
 
 ```
-Неизвестный IP подключился
+Unknown IP connects
         │
         ▼
-Первый раз? ──Да──▶ Алерт + создать pending файл
-        │                  │
-        │            Ожидание ответа
-        │           ДА ◀──┤──▶ НЕТ / 5 мин тишина
-        │            │              │
-        │     Добавить в         Заблокировать
-        │     whitelist          ufw deny from IP
+First time? ──Yes──▶ Alert + create pending file
+        │                   │
+        │             Waiting for response
+        │            YES ◀──┤──▶ NO / 5 min timeout
+        │             │              │
+        │      Add to whitelist   Block IP
+        │                         ufw deny from IP
         │
-       Нет (pending уже есть)
+       No (pending already exists)
         │
         ▼
-   Немедленный бан 🚫
+   Immediate ban 🚫
 ```
 
 ---
 
-## Работа с несколькими серверами и агентами
+## Multi-Server & Multi-Agent Setup
 
-### Архитектура
+### Architecture
 
 ```
-Мастер-сервер (хранит whitelist)
-├── /root/scripts/security/whitelist-ips.conf  ← единый список
-├── /root/scripts/security/servers.conf        ← список серверов
-└── cron: sync-whitelist.sh раз в сутки → пушит на все серверы
+Master server (stores whitelist)
+├── /root/scripts/security/whitelist-ips.conf  ← single source of truth
+├── /root/scripts/security/servers.conf        ← list of servers
+└── cron: sync-whitelist.sh daily → pushes to all servers
 
-Сервер-2, Сервер-3, ..., Сервер-N
-└── /root/scripts/security/whitelist-ips.conf  ← получают от мастера
+Server-2, Server-3, ..., Server-N
+└── /root/scripts/security/whitelist-ips.conf  ← received from master
 ```
 
-### Добавить новый сервер (с мастера)
+### Add a New Server (from master)
 ```bash
 ./onboard-server.sh root@NEW_IP "Prod-Backend"
 ```
 
-### Несколько рабочих мест одного человека
+### Multiple Workstations for One Person
 ```bash
 echo "1.2.3.4 Admin-home" >> /root/scripts/security/whitelist-ips.conf
 echo "5.6.7.8 Admin-office" >> /root/scripts/security/whitelist-ips.conf
 echo "9.10.11.12 Admin-mobile" >> /root/scripts/security/whitelist-ips.conf
 ```
 
-### Несколько сотрудников
+### Multiple Team Members
 ```bash
 echo "1.2.3.4 Ivan" >> whitelist-ips.conf
 echo "5.6.7.8 Maria-home" >> whitelist-ips.conf
 echo "13.14.15.16 Alexey" >> whitelist-ips.conf
 ```
 
-### 10 агентов / ботов
+### 10 Bots / AI Agents
 ```bash
 echo "10.0.0.1 Agent-1" >> whitelist-ips.conf
 echo "10.0.0.2 Agent-2" >> whitelist-ips.conf
-# ...после добавления — синхронизировать:
+# After adding — sync to all servers:
 bash /root/scripts/security/sync-whitelist.sh
 ```
 
 ---
 
-## Настройка скриптов
+## Configuration
 
-`ssh-alert.sh` — метка сервера в уведомлениях:
+`ssh-alert.sh` — server label in notifications:
 ```bash
 SERVER_LABEL="MyServer"
 ```
 
-`monitor.sh` — список сервисов для мониторинга:
+`monitor.sh` — list of services to monitor:
 ```bash
 SERVICES="nginx postgresql myapp"
 ```
 
 ---
 
-## Частые проблемы
+## Troubleshooting
 
-### Меня заблокировало — не могу зайти по SSH
-1. Зайти через KVM/VNC консоль хостинг-провайдера
-2. Выполнить: `ufw delete deny from ТВОЙ_IP`
-3. Добавить IP в whitelist: `echo "1.2.3.4 Admin" >> /root/scripts/security/whitelist-ips.conf`
+### Locked myself out — can't SSH in
+1. Log in via your hosting provider's KVM/VNC console
+2. Run: `ufw delete deny from YOUR_IP`
+3. Add IP to whitelist: `echo "1.2.3.4 Admin" >> /root/scripts/security/whitelist-ips.conf`
 
-### Один и тот же IP спрашивает дважды
-PAM иногда открывает два сеанса. Проверить дубли:
+### Same IP keeps triggering alerts twice
+PAM sometimes opens two sessions. Check for duplicates:
 ```bash
 grep "ssh-alert" /etc/pam.d/sshd
-# Если две строки — удалить дубль:
+# If two lines — remove the duplicate:
 sed -i '0,/ssh-alert/! {/ssh-alert/d}' /etc/pam.d/sshd
 ```
 
-### Whitelist обновил, но сервер всё равно спрашивает
-Синхронизировать вручную:
+### Updated whitelist but server still asks
+Sync manually:
 ```bash
 bash /root/scripts/security/sync-whitelist.sh
 ```
 
-### Агент/бот постоянно триггерит алерты
-Добавить статический IP агента в whitelist. Если IP динамический — зафиксировать через статический IP сервера агента.
+### Agent/bot keeps triggering alerts
+Add the agent's static IP to the whitelist. If the IP is dynamic — provision a static IP for the agent's server.
 
-### Сервер заблокировал нужный IP
+### Server blocked a legitimate IP
 ```bash
-ufw delete deny from IP_АДРЕС
-echo "IP_АДРЕС Метка" >> /root/scripts/security/whitelist-ips.conf
+ufw delete deny from IP_ADDRESS
+echo "IP_ADDRESS Label" >> /root/scripts/security/whitelist-ips.conf
 bash /root/scripts/security/sync-whitelist.sh
 ```
 
 ---
 
-## Структура файлов
+## File Structure
 
 ```
 scripts/
-├── ssh-alert.sh          # PAM-хук: алерт + очередь + автобан
-├── send-queue.sh         # Батчинг: объединяет входы в одно сообщение
-├── pending-check.sh      # Автоблокировка по таймауту (5 мин)
-├── monitor.sh            # Мониторинг сервисов + диск + память
-├── port-check.sh         # Аномальные порты (раз в сутки)
-├── sync-whitelist.sh     # Синхронизация whitelist на все серверы
-├── onboard-server.sh     # Деплой на новый сервер одной командой
-├── whitelist-ips.conf    # Белый список IP
-├── servers.conf          # Список серверов для синхронизации
-└── .env_secrets.template # Шаблон токенов (не коммитить!)
+├── ssh-alert.sh          # PAM hook: alert + queue + auto-ban
+├── send-queue.sh         # Batching: combines logins into one message
+├── pending-check.sh      # Auto-block on timeout (5 min)
+├── monitor.sh            # Service + disk + memory monitoring
+├── port-check.sh         # Anomalous ports (daily)
+├── sync-whitelist.sh     # Sync whitelist to all servers
+├── onboard-server.sh     # Deploy to new server in one command
+├── whitelist-ips.conf    # IP whitelist
+├── servers.conf          # Server list for sync
+└── .env_secrets.template # Token template (do not commit!)
 ```
 
 ---
 
-## Известные ограничения
+## Known Limitations
 
-- UFW-блокировка блокирует весь трафик с IP, не только SSH
-- Ответ "ДА" обрабатывается вручную — добавить IP в whitelist самостоятельно
-- `monitor.sh` — список сервисов прописывается отдельно на каждом сервере
-- Динамические IP (мобильный, некоторые провайдеры) придётся обновлять вручную
-- Один Telegram-бот уведомляет одного человека; для команды — доработать скрипт под несколько chat_id
+- UFW block affects all traffic from an IP, not just SSH
+- "YES" response (approve IP) still requires manually adding to whitelist
+- `monitor.sh` — service list must be configured separately on each server
+- Dynamic IPs (mobile, some ISPs) require manual whitelist updates
+- One bot notifies one person; for teams — extend the scripts to support multiple chat IDs
 
 ---
 
-Сделано в феврале 2026. Работает на Ubuntu 22.04 / 24.04.
+Built in February 2026. Tested on Ubuntu 22.04 / 24.04.
